@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/joho/godotenv"
 )
 
 var Cfg *config
@@ -67,6 +69,9 @@ func getEnvInt(key string, def int) int {
 }
 
 func LoadConfig() {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	Cfg = &config{
 		Enable_http: getEnvBool("ENABLE_HTTP", true),
 		Uds:         getEnvBool("ENABLE_UDS", true),
