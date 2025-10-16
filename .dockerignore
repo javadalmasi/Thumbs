@@ -1,0 +1,9 @@
+*.md
+*.sock
+.dockerignore
+Dockerfile
+LICENSE
+.github
+.gitignore
+cache
+dockerhash.txt
