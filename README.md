@@ -1,4 +1,4 @@
-# YouTube Image Proxy
+# Thumbs - YouTube Thumbnail Proxy
 
 A high-performance, lightweight proxy server specifically designed for serving YouTube thumbnail images with enhanced functionality including quality detection, resizing, quality adjustment, format conversion, and encrypted ID support.
 
@@ -21,10 +21,10 @@ A high-performance, lightweight proxy server specifically designed for serving Y
 ### Build from Source
 
 ```bash
-git clone <repository-url>
-cd http3-ytproxy
+git clone https://github.com/javadalmasi/Thumbs.git
+cd Thumbs
 go mod download
-go build -o http3-ytproxy ./cmd/http3-ytproxy
+go build -o Thumbs ./cmd/http3-ytproxy
 ```
 
 ## Usage
@@ -32,35 +32,36 @@ go build -o http3-ytproxy ./cmd/http3-ytproxy
 ### Basic Server
 
 ```bash
-./http3-ytproxy -p 8080
+./Thumbs -p 8080
 ```
 
 ### With Custom Parameters
 
 ```bash
 # Start server on custom port and host
-./http3-ytproxy -l 0.0.0.0 -p 3000
+./Thumbs -l 0.0.0.0 -p 3000
 
 # Enable HTTP/3
-./http3-ytproxy -http-client-ver 3
+./Thumbs -http-client-ver 3
 
 # Use Unix socket instead of TCP
-./http3-ytproxy -uds -s /tmp/youtube-proxy.sock
+./Thumbs -uds -s /tmp/youtube-proxy.sock
 ```
 
 ## API Endpoints
 
 ### Image Proxy
 ```
-/vi/{videoId}
+/vi/{encodedVideoId}
 ```
 
-Returns the highest quality thumbnail available for the given YouTube video ID.
+Returns the highest quality thumbnail available for the given encoded YouTube video ID.
 
 #### Query Parameters
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
+| `x-oss-process` | string | Alibaba-style image processing (e.g., `image/resize,m_fill,w_800,h_600`) | None |
 | `resize` | string | Resize image to specified dimensions (width,height) | None |
 | `quality` | integer | Image quality (1-100) | 85 |
 | `format` | string | Output format (jpg, webp, avif) | webp |
@@ -68,21 +69,67 @@ Returns the highest quality thumbnail available for the given YouTube video ID.
 #### Examples
 
 ```
-# Get best quality thumbnail (11-character YouTube ID)
-/vi/dQw4w9WgXcQ
-
 # Get best quality thumbnail (12-character encoded ID)
 /vi/2r8RVAuxuMN_
 
 # Resize to 768x432 with 85% quality in webp format
-/vi/dQw4w9WgXcQ?resize=768,432&quality=85
+/vi/2r8RVAuxuMN_?resize=768,432&quality=85
 
-# Resize to 1280x720 with 90% quality in avif format (using encoded ID)
+# Resize to 1280x720 with 90% quality in avif format
 /vi/2r8RVAuxuMN_?resize=1280,720&quality=90&format=avif
 
 # Get in jpg format with default quality
-/vi/dQw4w9WgXcQ?format=jpg
+/vi/2r8RVAuxuMN_?format=jpg
+
+# Alibaba-style resize (scale to 800x600)
+/vi/2r8RVAuxuMN_?x-oss-process=image/resize,m_fill,w_800,h_600
+
+# Full example with quality, format, and resize
+/vi/2r8RVAuxuMN_?x-oss-process=image/resize,m_fill,w_1024,h_768&quality=90&format=webp
 ```
+
+#### Alibaba-Style Image Processing
+
+The proxy supports Alibaba Cloud Object Storage Service (OSS) style image processing parameters through the `x-oss-process` query parameter:
+
+##### Resize Operations
+- `x-oss-process=image/resize,m_fill,w_800,h_600` - Resize to 800x600 using fill mode
+- `x-oss-process=image/resize,m_lfit,w_800,h_600` - Resize with limit fit (maintains aspect ratio, no upscale)
+- `x-oss-process=image/resize,m_mfit,w_800,h_600` - Resize with manual fit (maintains aspect ratio, allows upscale)
+- `x-oss-process=image/resize,m_pad,w_800,h_600` - Resize with padding to exact dimensions
+- `x-oss-process=image/resize,w_800` - Resize width to 800, height auto-scaled
+- `x-oss-process=image/resize,h_600` - Resize height to 600, width auto-scaled
+
+##### Format Conversion
+- `x-oss-process=image/format,jpg` - Convert to JPEG format
+- `x-oss-process=image/format,png` - Convert to PNG format
+- `x-oss-process=image/format,webp` - Convert to WebP format (served as JPEG in this implementation)
+- `x-oss-process=image/format,avif` - Convert to AVIF format (served as JPEG in this implementation)
+
+##### Quality Settings
+- `x-oss-process=image/quality,q_90` - Set output quality to 90%
+
+##### Combined Operations
+- `x-oss-process=image/resize,w_800,h_600/format,jpg/quality,q_85` - Resize to 800x600, convert to JPEG, set quality to 85%
+
+This allows for seamless integration with systems that already use Alibaba OSS image processing syntax.
+
+#### Format Support Limitations
+- JPEG: Full support for encoding and decoding
+- PNG: Full support for encoding and decoding  
+- WebP: Decoding supported, encoding available as JPEG in this implementation
+- AVIF: Decoding supported, encoding available as JPEG in this implementation
+
+For full WebP and AVIF encoding support, external tools would need to be integrated.
+
+#### Demos
+You can test the following endpoints with any YouTube video ID:
+
+1. **Basic thumbnail:** `http://localhost:8080/vi/{encodedId}`
+2. **Alibaba-style resize:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/resize,w_800,h_600`
+3. **Quality adjustment:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/quality,q_90`
+4. **Format conversion:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/format,jpg`
+5. **Combined operations:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/resize,w_1024,h_768/format,jpg/quality,q_85`
 
 ### Encoded IDs
 
@@ -147,6 +194,96 @@ The proxy uses concurrent requests to find the best quality image quickly, typic
 - Sets appropriate security headers
 - CORS enabled with permissive settings (can be configured)
 
+## Docker Deployment
+
+The application is available as a Docker container on GitHub Container Registry (GHCR).
+
+### Pull from GHCR
+
+```bash
+docker pull ghcr.io/javadalmasi/thumbs:latest
+```
+
+### Docker Compose
+
+Create a `docker-compose.yml` file:
+
+```yaml
+# This is already configured in the project's docker-compose.yml
+services:
+  Thumbs:
+    build: .
+    image: ghcr.io/javadalmasi/thumbs:latest
+    container_name: Thumbs
+    restart: unless-stopped
+    ports:
+      - "8080:8080/tcp" # HTTP
+    environment:
+      - YTPROXY_SECRET_KEY=your-16-char-key
+      - YTPROXY_PORT=8080
+    cap_add:
+      - NET_ADMIN
+
+networks:
+  thumbs_network:
+    driver: bridge
+```
+
+### Building and Running with Docker
+
+```bash
+# Build the image
+docker build -t ghcr.io/javadalmasi/thumbs:latest .
+
+# Run the container
+docker run -d \
+  --name Thumbs \
+  -p 8080:8080 \
+  -e YTPROXY_SECRET_KEY=your-16-char-key \
+  --cap-add=NET_ADMIN \
+  ghcr.io/javadalmasi/thumbs:latest
+```
+
+## Testing
+
+### Manual Testing
+
+After starting the server, you can test it with curl:
+
+```bash
+# Test the root endpoint
+curl http://localhost:8080
+
+# Test with an encoded YouTube ID (12-character encoded ID)
+curl http://localhost:8080/vi/ENCODED_ID_HERE
+
+# Test with resize parameters
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?resize=320,240"
+
+# Test with Alibaba-style resize
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_320,h_240"
+
+# Test with format and quality
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?format=jpg&quality=90"
+```
+
+### Testing Image Output
+
+You can save and verify image properties:
+
+```bash
+# Download a thumbnail
+curl -o test.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?resize=320,240"
+
+# Check file size and format
+file test.jpg
+ls -la test.jpg
+```
+
+### Example with Real YouTube ID
+
+To generate an encoded ID for testing, you would need to use the Encode function with a real YouTube ID. For example, for the YouTube ID "dQw4w9WgXcQ", you would encode it using the secret key to get a 12-character encoded ID.
+
 ## License
 
-This project is licensed under the terms specified in the LICENSE file.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.

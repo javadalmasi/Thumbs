@@ -7,15 +7,14 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/config"
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/httpc"
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/paths"
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/utils"
+	"github.com/javadalmasi/Thumbs/internal/config"
+	"github.com/javadalmasi/Thumbs/internal/httpc"
+	"github.com/javadalmasi/Thumbs/internal/paths"
+	"github.com/javadalmasi/Thumbs/internal/utils"
 	"github.com/prometheus/procfs"
 )
 
@@ -109,7 +108,7 @@ func beforeProxy(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 		w.Header().Set("Access-Control-Max-Age", "1728000")
 		w.Header().Set("Strict-Transport-Security", "max-age=86400")
-		w.Header().Set("X-Powered-By", "http3-ytproxy "+version+"-"+runtime.GOARCH)
+		w.Header().Set("X-Powered-By", "Thumbs "+version)
 
 		if req.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -135,7 +134,7 @@ func main() {
 	flag.BoolVar(&config.Cfg.Uds, "uds", config.Cfg.Uds, "Enable UDS (Unix socket domain)")
 	flag.IntVar(&config.Cfg.Http_client_ver, "http-client-ver", config.Cfg.Http_client_ver, "Specify the HTTP Version that is going to be used on the client, accepted values are '1', '2 'and '3'")
 	flag.BoolVar(&config.Cfg.Ipv6_only, "ipv6-only", config.Cfg.Ipv6_only, "Only use ipv6 for requests")
-	flag.StringVar(&config.Cfg.Uds_path, "s", config.Cfg.Uds_path, "Specify the UDS (Unix socket domain) path\nExample: /run/http3-ytproxy.sock")
+	flag.StringVar(&config.Cfg.Uds_path, "s", config.Cfg.Uds_path, "Specify the UDS (Unix socket domain) path\nExample: /run/Thumbs.sock")
 	flag.StringVar(&config.Cfg.Proxy, "pr", config.Cfg.Proxy, "Specify the proxy that is going to be used for requests\nExample: http://127.0.0.1:8090")
 	flag.StringVar(&config.Cfg.Port, "p", config.Cfg.Port, "Specify a port number")
 	flag.StringVar(&config.Cfg.Host, "l", config.Cfg.Host, "Specify a listen address")

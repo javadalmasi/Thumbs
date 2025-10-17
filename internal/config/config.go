@@ -75,7 +75,7 @@ func LoadConfig() {
 	Cfg = &config{
 		Enable_http: getEnvBool("ENABLE_HTTP", true),
 		Uds:         getEnvBool("ENABLE_UDS", true),
-		// I would use `/run/http3-proxy` here, but `/run` is not user writable
+		// I would use `/run/Thumbs` here, but `/run` is not user writable
 		// which is kinda anoying when developing.
 		Uds_path:        getEnvString("UDS_PATH", "/tmp/http-ytproxy.sock", true),
 		Host:            getEnvString("HOST", "0.0.0.0", true),
@@ -100,7 +100,7 @@ func LoadConfig() {
 }
 
 func checkConfig() {
-	if len(Cfg.Companion.Secret_key) > 16 {
-		log.Fatalln("The value of 'companion.secret_key' (YTPROXY_SECRET_KEY) needs to be a size of 16 characters.")
+	if len(Cfg.Companion.Secret_key) != 16 {
+		log.Fatalln("The value of 'companion.secret_key' (YTPROXY_SECRET_KEY) needs to be exactly 16 characters.")
 	}
 }

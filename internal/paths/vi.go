@@ -1,18 +1,27 @@
 package paths
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"hash/crc64"
+	"image"
+	_ "image/gif"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"math/big"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/config"
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/httpc"
+	"github.com/disintegration/imaging"
+	"github.com/javadalmasi/Thumbs/internal/config"
+	"github.com/javadalmasi/Thumbs/internal/httpc"
 )
 
 func forbiddenChecker(resp *http.Response, w http.ResponseWriter) error {
@@ -23,6 +32,25 @@ func forbiddenChecker(resp *http.Response, w http.ResponseWriter) error {
 	return nil
 }
 
+// Helper function to generate hash based on string input
+func hashString(s string) uint64 {
+	// Using simple FNV-1a hash algorithm
+	h := crc64.MakeTable(crc64.ECMA) // Using crc64 as a hash function
+	return crc64.Checksum([]byte(s), h)
+}
+
+// Helper function to generate request ID
+func generateRequestID() string {
+	// Generate a random request ID similar to Alibaba OSS
+	rand.Seed(time.Now().UnixNano())
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 24)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
+}
+
 func Vi(w http.ResponseWriter, req *http.Request) {
 	const host string = "i.ytimg.com"
 	
@@ -31,7 +59,7 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 	encodedVideoId := strings.TrimPrefix(path, "/vi/")
 	encodedVideoId = strings.Split(encodedVideoId, "/")[0] // Get just the ID part
 
-	// Check if the ID is 12 characters (encoded) or 11 characters (raw YouTube ID)
+	// Only accept 12-character encoded IDs, no more 11-character YouTube IDs
 	var videoId string
 	if len(encodedVideoId) == 12 {
 		// Decode the 12-character encoded ID to get the 11-character YouTube ID
@@ -49,12 +77,9 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		videoId = decodedId
-	} else if len(encodedVideoId) == 11 {
-		// It's already a raw YouTube ID
-		videoId = encodedVideoId
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, fmt.Sprintf("Invalid ID length: got %d, expected 11 or 12", len(encodedVideoId)))
+		io.WriteString(w, fmt.Sprintf("Invalid ID length: got %d, expected 12 for encoded ID", len(encodedVideoId)))
 		return
 	}
 
@@ -88,6 +113,59 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 	if f := query.Get("format"); f != "" {
 		if f == "jpg" || f == "jpeg" || f == "webp" || f == "avif" {
 			format = f
+		}
+	}
+	
+	// Check if x-oss-process parameter is present for Alibaba-style processing
+	ossProcessParam := query.Get("x-oss-process")
+	if ossProcessParam != "" {
+		// Parse x-oss-process=image/resize,w_800,h_600 or image/format,jpg or image/quality,q_85
+		// Can also be combined like: image/resize,w_800,h_600/format,jpg/quality,q_90
+		operations := strings.Split(ossProcessParam, "/")
+		
+		for _, operation := range operations {
+			operation = strings.TrimSpace(operation)
+			
+			// Handle resize operations
+			if strings.HasPrefix(operation, "image/resize") {
+				parts := strings.Split(operation, ",")
+				for _, part := range parts {
+					part = strings.TrimSpace(part)
+					if strings.HasPrefix(part, "w_") {
+						if w, err := strconv.Atoi(strings.TrimPrefix(part, "w_")); err == nil {
+							resizeWidth = w
+						}
+					} else if strings.HasPrefix(part, "h_") {
+						if h, err := strconv.Atoi(strings.TrimPrefix(part, "h_")); err == nil {
+							resizeHeight = h
+						}
+					}
+				}
+			} else if strings.HasPrefix(operation, "image/format") {
+				// Handle format operations
+				parts := strings.Split(operation, ",")
+				if len(parts) >= 2 {
+					newFormat := strings.TrimSpace(parts[1])
+					if newFormat == "jpg" || newFormat == "jpeg" {
+						format = "jpg"
+					} else if newFormat == "png" {
+						format = "png"
+					} else if newFormat == "webp" {
+						format = "webp"
+					} else if newFormat == "avif" {
+						format = "avif"
+					}
+				}
+			} else if strings.HasPrefix(operation, "image/quality") {
+				// Handle quality operations
+				parts := strings.Split(operation, ",")
+				if len(parts) >= 2 {
+					qualityStr := strings.TrimPrefix(parts[1], "q_")
+					if q, err := strconv.Atoi(qualityStr); err == nil && q >= 1 && q <= 100 {
+						quality = q
+					}
+				}
+			}
 		}
 	}
 
@@ -170,28 +248,145 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		
-		// We got a response, forward it to the client
+		// We got a response, process and forward it to the client
 		defer resp.Body.Close()
 		
-		// Set appropriate content type based on requested format
-		switch format {
-		case "jpg", "jpeg":
-			w.Header().Set("Content-Type", "image/jpeg")
-		case "webp":
-			w.Header().Set("Content-Type", "image/webp")
-		case "avif":
-			w.Header().Set("Content-Type", "image/avif")
-		default:
-			// Use the original content type from the response
-			for key, values := range resp.Header {
-				for _, value := range values {
-					w.Header().Add(key, value)
-				}
-			}
+		// Add cache headers for CDN and LiteSpeed
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		w.Header().Set("X-LiteSpeed-Cache-Control", "max-age=31536000") // 1 year for LiteSpeed
+		w.Header().Set("Expires", time.Now().AddDate(1, 0, 0).Format(http.TimeFormat))
+		w.Header().Set("Vary", "Accept")
+		
+		// Add Alibaba-like response headers
+		w.Header().Set("X-Bucket-Code", "3")
+		w.Header().Set("X-OSS-Hash-Crc64Ecma", fmt.Sprintf("%d", hashString(videoId))) // Generate hash based on video ID
+		w.Header().Set("X-OSS-Object-Type", "Normal")
+		w.Header().Set("X-OSS-Request-ID", generateRequestID())
+		w.Header().Set("X-OSS-Server-Time", "2")
+		w.Header().Set("X-OSS-Storage-Class", "Standard")
+
+		// Read the image data
+		imageData, err := io.ReadAll(resp.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, "Error reading image data")
+			return
 		}
 		
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		// Only process the image if resize parameters are specified
+		if resizeWidth > 0 && resizeHeight > 0 {
+			// Decode the image
+			img, _, err := image.Decode(bytes.NewReader(imageData))
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(w, fmt.Sprintf("Error decoding image: %v", err))
+				return
+			}
+			
+			// Resize the image
+			resizedImg := imaging.Resize(img, resizeWidth, resizeHeight, imaging.Lanczos)
+			
+			// Encode the resized image based on requested format
+			var buf bytes.Buffer
+			switch format {
+			case "jpg", "jpeg":
+				err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+				w.Header().Set("Content-Type", "image/jpeg")
+			case "png":
+				err = png.Encode(&buf, resizedImg)
+				w.Header().Set("Content-Type", "image/png")
+			case "webp":
+				// For webp, we need to handle this separately as Go stdlib doesn't encode webp
+				// For now, we'll return as JPEG since we don't have webp encoding
+				err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+				w.Header().Set("Content-Type", "image/jpeg")
+			case "avif":
+				// For avif, return as JPEG since Go's standard library doesn't support encoding these natively
+				// In a production environment, you might want to integrate with external tools like avifenc
+				err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+				w.Header().Set("Content-Type", "image/jpeg")
+			default:
+				// Default to JPEG
+				err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+				w.Header().Set("Content-Type", "image/jpeg")
+			}
+			
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(w, fmt.Sprintf("Error encoding image: %v", err))
+				return
+			}
+			
+			// Send the processed image
+			w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+			w.WriteHeader(resp.StatusCode)
+			w.Write(buf.Bytes())
+		} else {
+			// No resize needed, but we may still need to convert quality/format
+			if quality != 85 || format != "webp" {
+				// Decode the image
+				img, _, err := image.Decode(bytes.NewReader(imageData))
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					io.WriteString(w, fmt.Sprintf("Error decoding image: %v", err))
+					return
+				}
+				
+				// Encode with the requested quality/format
+				var buf bytes.Buffer
+				switch format {
+				case "jpg", "jpeg":
+					err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+					w.Header().Set("Content-Type", "image/jpeg")
+				case "png":
+					err = png.Encode(&buf, img)
+					w.Header().Set("Content-Type", "image/png")
+				case "webp":
+					// For webp, return as JPEG since Go's standard library doesn't support encoding these natively
+					err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+					w.Header().Set("Content-Type", "image/jpeg")
+				case "avif":
+					// For avif, return as JPEG since Go doesn't support encoding these natively
+					err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+					w.Header().Set("Content-Type", "image/jpeg")
+				default:
+					// Default to JPEG with requested quality
+					err = jpeg.Encode(&buf, img, &jpeg.Options{Quality: quality})
+					w.Header().Set("Content-Type", "image/jpeg")
+				}
+				
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					io.WriteString(w, fmt.Sprintf("Error encoding image: %v", err))
+					return
+				}
+				
+				w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+				w.WriteHeader(resp.StatusCode)
+				w.Write(buf.Bytes())
+			} else {
+				// No processing needed, forward original image with cache headers
+				// Set appropriate content type based on requested format
+				switch format {
+				case "jpg", "jpeg":
+					w.Header().Set("Content-Type", "image/jpeg")
+				case "webp":
+					w.Header().Set("Content-Type", "image/webp")
+				case "avif":
+					w.Header().Set("Content-Type", "image/avif")
+				default:
+					// Use the original content type from the response
+					for key, values := range resp.Header {
+						for _, value := range values {
+							w.Header().Add(key, value)
+						}
+					}
+				}
+				
+				w.WriteHeader(resp.StatusCode)
+				w.Write(imageData)
+			}
+		}
 	} else {
 		// No transformation parameters, use original logic for best quality image
 		qualityLevels := []string{
@@ -383,14 +578,14 @@ func Decode(id12, secret string) (string, error) {
 		return "", fmt.Errorf("failed to decode input: %w", err)
 	}
 
-	// Convert to big integer M (72 bits)
-	m := new(big.Int).SetBytes(decodedBytes)
-
 	// Derive the same key S (72 bits)
 	s, err := deriveKey(secret)
 	if err != nil {
 		return "", fmt.Errorf("failed to derive key: %w", err)
 	}
+
+	// Convert to big integer M (72 bits)
+	m := new(big.Int).SetBytes(decodedBytes)
 
 	// Compute N = M XOR S
 	n := new(big.Int)
@@ -414,12 +609,21 @@ func Decode(id12, secret string) (string, error) {
 	}
 
 	// Create proper base64 string for 66 bits (11 chars)
+	// Add proper padding for base64 encoding if necessary
 	tempEncoded := base64.URLEncoding.EncodeToString(relevantBytes)
 	
+	// Remove padding and ensure exactly 11 characters
 	// Since 66 bits should encode to 11 characters, we take first 11 if available
 	if len(tempEncoded) >= 11 {
-		return tempEncoded[:11], nil
+		// Remove any padding added during encoding
+		result := tempEncoded[:11]
+		return result, nil
 	} else {
-		return tempEncoded, nil
+		// Pad with zeros if needed to ensure 11 characters
+		result := tempEncoded
+		for len(result) < 11 {
+			result = "A" + result  // Use 'A' which represents zero in base64
+		}
+		return result[:11], nil
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/httpc"
+	"github.com/javadalmasi/Thumbs/internal/httpc"
 )
 
 func CopyHeaders(from http.Header, to http.Header, length bool) {

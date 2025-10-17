@@ -7,8 +7,8 @@ import (
 
 func Root(w http.ResponseWriter, req *http.Request) {
 	const msg = `
-	HTTP youtube proxy for https://inv.nadeko.net
-	https://git.nadeko.net/Fijxu/http3-ytproxy
+	Thumbs - YouTube Thumbnail Proxy
+	https://github.com/javadalmasi/Thumbs
 
 	Routes:
 	/stats

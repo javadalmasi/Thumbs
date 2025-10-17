@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"git.nadeko.net/Fijxu/http3-ytproxy/internal/config"
+	"github.com/javadalmasi/Thumbs/internal/config"
 	"github.com/quic-go/quic-go/http3"
 )
 
