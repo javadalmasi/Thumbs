@@ -1,13 +1,13 @@
-# Thumbs - YouTube Thumbnail Proxy
+# Thumbs - Image Proxy Server
 
-A high-performance, lightweight proxy server specifically designed for serving YouTube thumbnail images with enhanced functionality including quality detection, resizing, quality adjustment, format conversion, and encrypted ID support.
+A high-performance, lightweight proxy server specifically designed for serving web images with enhanced functionality including quality detection, resizing, quality adjustment, format conversion, and encrypted ID support.
 
 ## Features
 
 - **Fast Performance**: Uses HTTP/1.1, HTTP/2, and HTTP/3 clients for optimal performance
-- **Quality Detection**: Automatically detects and serves the highest available quality thumbnail for any YouTube video
+- **Quality Detection**: Automatically detects and serves the highest available quality image from any source
 - **Image Parameters**: Supports resize, quality, and format conversion parameters
-- **Encrypted IDs**: Supports encoded 12-character IDs that are securely decoded to 11-character YouTube IDs
+- **Encrypted IDs**: Supports encoded 12-character IDs that are securely decoded to 11-character source IDs
 - **Concurrent Requests**: Finds the best quality image efficiently using concurrent requests
 - **Multiple Protocols**: Supports HTTP/1.1, HTTP/2, and HTTP/3 for maximum compatibility
 - **CORS Enabled**: Built-in CORS headers for web application integration
@@ -45,7 +45,7 @@ go build -mod=vendor -o Thumbs ./cmd/Thumbs
 ./Thumbs -http-client-ver 3
 
 # Use Unix socket instead of TCP
-./Thumbs -uds -s /tmp/youtube-proxy.sock
+./Thumbs -uds -s /tmp/thumbnail-proxy.sock
 ```
 
 ## API Endpoints
@@ -55,7 +55,7 @@ go build -mod=vendor -o Thumbs ./cmd/Thumbs
 /vi/{encodedVideoId}
 ```
 
-Returns the highest quality thumbnail available for the given encoded YouTube video ID.
+Returns the highest quality image available for the given encoded ID.
 
 #### Query Parameters
 
@@ -123,7 +123,7 @@ This allows for seamless integration with systems that already use Alibaba OSS i
 For full WebP and AVIF encoding support, external tools would need to be integrated.
 
 #### Demos
-You can test the following endpoints with any YouTube video ID:
+You can test the following endpoints with any encoded ID:
 
 1. **Basic thumbnail:** `http://localhost:8080/vi/{encodedId}`
 2. **Alibaba-style resize:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/resize,w_800,h_600`
@@ -133,14 +133,14 @@ You can test the following endpoints with any YouTube video ID:
 
 ### Encoded IDs
 
-The proxy supports 12-character encoded IDs that are securely transformed from 11-character YouTube video IDs using XOR encryption. To use this feature:
+The proxy supports 12-character encoded IDs that are securely transformed from 11-character source IDs using XOR encryption. To use this feature:
 
 1. Set the `YTPROXY_SECRET_KEY` environment variable with your secret key
-2. Use 12-character encoded IDs in place of the standard YouTube IDs
-3. The proxy will automatically decode the ID and fetch the appropriate thumbnail
+2. Use 12-character encoded IDs in place of the standard source IDs
+3. The proxy will automatically decode the ID and fetch the appropriate image
 
 The encoding uses a deterministic, reversible algorithm:
-- Input: 11-character YouTube ID using base64-url alphabet
+- Input: 11-character source ID using base64-url alphabet
 - Output: 12-character encoded ID using base64-url alphabet
 - The transformation is secured with your secret key using SHA256-derived 72-bit key
 
@@ -254,7 +254,7 @@ After starting the server, you can test it with curl:
 # Test the root endpoint
 curl http://localhost:8080
 
-# Test with an encoded YouTube ID (12-character encoded ID)
+# Test with an encoded ID (12-character encoded ID)
 curl http://localhost:8080/vi/ENCODED_ID_HERE
 
 # Test with resize parameters
@@ -280,9 +280,9 @@ file test.jpg
 ls -la test.jpg
 ```
 
-### Example with Real YouTube ID
+### Example with Real Source ID
 
-To generate an encoded ID for testing, you would need to use the Encode function with a real YouTube ID. For example, for the YouTube ID "dQw4w9WgXcQ", you would encode it using the secret key to get a 12-character encoded ID.
+To generate an encoded ID for testing, you would need to use the Encode function with a real source ID. For example, for the source ID "dQw4w9WgXcQ", you would encode it using the secret key to get a 12-character encoded ID.
 
 ## License
 

@@ -13,8 +13,8 @@ COPY . .
 # Vendor dependencies to ensure reproducible builds
 RUN go mod vendor
 
-RUN  --mount=type=cache,target=/root/.cache/go-build \
-    go build -mod=vendor -ldflags "-s -w -X 'main.version=$(date +%Y-%m-%d)'" -o Thumbs ./cmd/Thumbs
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    go build -mod=vendor -ldflags "-s -w -X 'main.version=build-$(date +%Y%m%d)'" -o Thumbs ./cmd/Thumbs
 
 FROM alpine:3.21
 
