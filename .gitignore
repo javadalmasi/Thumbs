@@ -21,3 +21,6 @@
 *.pem
 *.cer
 *.key
+
+# Project binaries
+Thumbs

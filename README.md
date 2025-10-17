@@ -24,7 +24,7 @@ A high-performance, lightweight proxy server specifically designed for serving Y
 git clone https://github.com/javadalmasi/Thumbs.git
 cd Thumbs
 go mod download
-go build -o Thumbs ./cmd/http3-ytproxy
+go build -mod=vendor -o Thumbs ./cmd/Thumbs
 ```
 
 ## Usage
