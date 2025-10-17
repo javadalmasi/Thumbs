@@ -13,6 +13,9 @@ COPY . .
 # Vendor dependencies to ensure reproducible builds
 RUN go mod vendor
 
+# Verify the directory exists before building
+RUN if [ ! -d "./cmd/Thumbs" ]; then echo "Directory ./cmd/Thumbs does not exist!" && ls -la cmd/ && exit 1; fi
+
 RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -mod=vendor -ldflags "-s -w -X 'main.version=build-$(date +%Y%m%d)'" -o Thumbs ./cmd/Thumbs
 
