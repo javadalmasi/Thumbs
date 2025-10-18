@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/javadalmasi/Thumbs/internal/config"
@@ -92,71 +91,47 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 		"default.jpg",       // Lowest quality
 	}
 
-	// Channel to receive the first successful response
-	responseChan := make(chan *http.Response, 1)
-	var wg sync.WaitGroup
-
-	// Make concurrent requests for each quality level
+	// Try quality levels in order of priority (highest first)
+	// Stop at the first successful response
+	var resp *http.Response
+	var host string
+	
 	for _, qualityLevel := range qualityLevels {
-		wg.Add(1)
-		go func(qualityLevel string) {
-			defer wg.Done()
-			
-			// Check if a response has already been found
-			select {
-			case <-responseChan:
-				return // Another goroutine already found a response
-			default:
-			}
-			
-			// Randomly select between hosts to reduce blocking
-			hosts := []string{"i.ytimg.com", "img.youtube.com"}
-			host := hosts[rand.Intn(len(hosts))]
-			
-			// Construct the URL for this quality level
-			imageURL := fmt.Sprintf("https://%s/vi/%s/%s", host, videoId, qualityLevel)
-			
-			// Create and send the request
-			request, err := http.NewRequest(req.Method, imageURL, nil)
-			if err != nil {
-				return
-			}
-			
-			request.Header.Set("User-Agent", default_ua)
-			request.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
-			request.Header.Set("Accept-Encoding", "gzip, deflate")
-			
-			resp, err := httpc.Client.Do(request)
-			if err != nil {
-				return
-			}
-			
-			// Check if this is a successful response
-			if resp.StatusCode == 200 {
-				// Try to send the response, but only if channel is not full
-				select {
-				case responseChan <- resp:
-				default:
-					// Another goroutine already sent a response, close this one
-					resp.Body.Close()
-				}
-			} else {
-				// Close the response body if not successful
-				resp.Body.Close()
-			}
-		}(qualityLevel)
+		// Randomly select between hosts to reduce blocking
+		hosts := []string{"i.ytimg.com", "img.youtube.com"}
+		host = hosts[rand.Intn(len(hosts))]
+		
+		// Construct the URL for this quality level
+		imageURL := fmt.Sprintf("https://%s/vi/%s/%s", host, videoId, qualityLevel)
+		
+		// Create and send the request
+		request, err := http.NewRequest(req.Method, imageURL, nil)
+		if err != nil {
+			continue
+		}
+		
+		request.Header.Set("User-Agent", default_ua)
+		request.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+		request.Header.Set("Accept-Encoding", "gzip, deflate")
+		
+		resp, err = httpc.Client.Do(request)
+		if err != nil {
+			continue
+		}
+		
+		// Check if this is a successful response
+		if resp.StatusCode == 200 {
+			// Success! We found the highest available quality
+			break
+		} else {
+			// Close the response body and try the next quality level
+			resp.Body.Close()
+			resp = nil
+		}
 	}
 	
-	// Wait for all goroutines to finish or for a response to be found
-	go func() {
-		wg.Wait()
-		// Close the channel after all requests are done
-		close(responseChan)
-	}()
-	
-	// Get the first successful response
-	resp, ok := <-responseChan
-	if !ok {
+	// Check if we found any successful response
+	if resp == nil {
 		// No successful response found
 		w.WriteHeader(http.StatusNotFound)
 		io.WriteString(w, "No image found for this video")
