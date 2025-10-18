@@ -28,11 +28,12 @@ type config struct {
 	Companion struct {
 		Secret_key string
 	}
+	Enable_litespeed_cache bool
 }
 
 func getenv(key string) string {
-	// `YTPROXY_` as a prefix
-	v, _ := syscall.Getenv("YTPROXY_" + key)
+	// Use the key as-is (no prefix)
+	v, _ := syscall.Getenv(key)
 	return v
 }
 
@@ -95,12 +96,13 @@ func LoadConfig() {
 		Companion: struct{ Secret_key string }{
 			Secret_key: getEnvString("SECRET_KEY", "", false),
 		},
+		Enable_litespeed_cache: getEnvBool("ENABLE_LITESPEED_CACHE", false),
 	}
 	checkConfig()
 }
 
 func checkConfig() {
 	if len(Cfg.Companion.Secret_key) != 16 {
-		log.Fatalln("The value of 'companion.secret_key' (YTPROXY_SECRET_KEY) needs to be exactly 16 characters.")
+		log.Fatalln("The value of environment variable 'SECRET_KEY' needs to be exactly 16 characters.")
 	}
 }

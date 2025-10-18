@@ -86,37 +86,12 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 	// Parse query parameters for resize, quality, and format
 	query := req.URL.Query()
 	
-	// Get resize parameters
+	// Initialize default values
 	var resizeWidth, resizeHeight int
-	if resizeParam := query.Get("resize"); resizeParam != "" {
-		parts := strings.Split(resizeParam, ",")
-		if len(parts) == 2 {
-			if w, err := strconv.Atoi(parts[0]); err == nil {
-				resizeWidth = w
-			}
-			if h, err := strconv.Atoi(parts[1]); err == nil {
-				resizeHeight = h
-			}
-		}
-	}
-	
-	// Get quality parameter (default 85)
 	quality := 85
-	if q := query.Get("quality"); q != "" {
-		if qVal, err := strconv.Atoi(q); err == nil && qVal >= 1 && qVal <= 100 {
-			quality = qVal
-		}
-	}
-	
-	// Get format parameter (default webp)
 	format := "webp"
-	if f := query.Get("format"); f != "" {
-		if f == "jpg" || f == "jpeg" || f == "webp" || f == "avif" {
-			format = f
-		}
-	}
 	
-	// Check if x-oss-process parameter is present for Alibaba-style processing
+	// Parse only x-oss-process parameter for Alibaba-style processing
 	ossProcessParam := query.Get("x-oss-process")
 	if ossProcessParam != "" {
 		// Parse x-oss-process=image/resize,w_800,h_600 or image/format,jpg or image/quality,q_85
@@ -253,7 +228,9 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 		
 		// Add cache headers for CDN and LiteSpeed
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
-		w.Header().Set("X-LiteSpeed-Cache-Control", "max-age=31536000") // 1 year for LiteSpeed
+		if config.Cfg.Enable_litespeed_cache {
+			w.Header().Set("X-LiteSpeed-Cache-Control", "max-age=31536000") // 1 year for LiteSpeed
+		}
 		w.Header().Set("Expires", time.Now().AddDate(1, 0, 0).Format(http.TimeFormat))
 		w.Header().Set("Vary", "Accept")
 		

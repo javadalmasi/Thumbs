@@ -9,7 +9,7 @@ services:
     ports:
       - "8080:8080/tcp" # HTTP
     environment:
-      - YTPROXY_SECRET_KEY=1234567890123456  # Must be exactly 16 characters
+      - SECRET_KEY=1234567890123456  # Environment variable for 16-character secret key
       - YTPROXY_PORT=8080
     # Needed for HTTP/3, otherwise, quic-go will output this depending of the machine:
     # "failed to sufficiently increase receive buffer size (was: 208 kiB, wanted: 7168 kiB, got: 416 kiB). 

@@ -66,6 +66,15 @@ Returns the highest quality image available for the given encoded ID.
 | `quality` | integer | Image quality (1-100) | 85 |
 | `format` | string | Output format (jpg, webp, avif) | webp |
 
+#### Response Headers
+
+The service returns various response headers, including caching headers. By default, the `X-LiteSpeed-Cache-Control` header is disabled. To enable it, set the `ENABLE_LITESPEED_CACHE` environment variable to `true`.
+
+When enabled, the service will return the following cache headers:
+- `Cache-Control`: `public, max-age=31536000, immutable` (1 year)
+- `X-LiteSpeed-Cache-Control`: `max-age=31536000` (1 year, only when enabled)
+- `Expires`: Set to 1 year from the request time
+
 #### Examples
 
 ```
@@ -90,37 +99,51 @@ Returns the highest quality image available for the given encoded ID.
 
 #### Alibaba-Style Image Processing
 
-The proxy supports Alibaba Cloud Object Storage Service (OSS) style image processing parameters through the `x-oss-process` query parameter:
+The proxy supports Alibaba Cloud Object Storage Service (OSS) style image processing parameters through the `x-oss-process` query parameter. All operations use the format: `x-oss-process=image/{operation},{parameters}`
+
+**Default Values:**
+- Format: `webp` (default output format)
+- Quality: `85` (default quality level)
 
 ##### Resize Operations
-- `x-oss-process=image/resize,m_fill,w_800,h_600` - Resize to 800x600 using fill mode
-- `x-oss-process=image/resize,m_lfit,w_800,h_600` - Resize with limit fit (maintains aspect ratio, no upscale)
-- `x-oss-process=image/resize,m_mfit,w_800,h_600` - Resize with manual fit (maintains aspect ratio, allows upscale)
-- `x-oss-process=image/resize,m_pad,w_800,h_600` - Resize with padding to exact dimensions
-- `x-oss-process=image/resize,w_800` - Resize width to 800, height auto-scaled
-- `x-oss-process=image/resize,h_600` - Resize height to 600, width auto-scaled
+- `x-oss-process=image/resize,w_800,h_600` - Resize to 800x600 while maintaining aspect ratio
+- `x-oss-process=image/resize,w_800` - Resize width to 800, height auto-scaled maintaining aspect ratio
+- `x-oss-process=image/resize,h_600` - Resize height to 600, width auto-scaled maintaining aspect ratio
+
+**Important:** Currently only width and height parameters are supported. Mode parameters (m_fill, m_lfit, etc.) are not implemented.
 
 ##### Format Conversion
+Supported formats:
 - `x-oss-process=image/format,jpg` - Convert to JPEG format
-- `x-oss-process=image/format,png` - Convert to PNG format
-- `x-oss-process=image/format,webp` - Convert to WebP format (served as JPEG in this implementation)
-- `x-oss-process=image/format,avif` - Convert to AVIF format (served as JPEG in this implementation)
+- `x-oss-process=image/format,png` - Convert to PNG format  
+- `x-oss-process=image/format,webp` - Convert to WebP format (converted to JPEG in this implementation due to Go standard library limitations)
+- `x-oss-process=image/format,avif` - Convert to AVIF format (converted to JPEG in this implementation due to Go standard library limitations)
 
 ##### Quality Settings
-- `x-oss-process=image/quality,q_90` - Set output quality to 90%
+- `x-oss-process=image/quality,q_90` - Set output quality to 90% (range: 1-100)
+- `x-oss-process=image/quality,q_75` - Set output quality to 75% (range: 1-100)
 
 ##### Combined Operations
-- `x-oss-process=image/resize,w_800,h_600/format,jpg/quality,q_85` - Resize to 800x600, convert to JPEG, set quality to 85%
+Multiple operations can be combined by separating them with `/`:
+- `x-oss-process=image/resize,w_800,h_600/format,jpg` - Resize to 800x600 and convert to JPEG
+- `x-oss-process=image/format,png/quality,q_90` - Convert to PNG with 90% quality
+- `x-oss-process=image/resize,w_1024,h_768/format,webp/quality,q_85` - Resize to 1024x768, convert to WebP, set quality to 85%
 
-This allows for seamless integration with systems that already use Alibaba OSS image processing syntax.
+**Note:** When requesting formats that Go's standard library cannot encode (WebP, AVIF), the image will be converted to JPEG but with appropriate Content-Type headers.
 
-#### Format Support Limitations
-- JPEG: Full support for encoding and decoding
-- PNG: Full support for encoding and decoding  
-- WebP: Decoding supported, encoding available as JPEG in this implementation
-- AVIF: Decoding supported, encoding available as JPEG in this implementation
+##### Processing Trigger
+Image processing is triggered when any of the following conditions are met:
+- Resize parameters are specified (both width and height > 0)
+- Quality is different from default (85)
+- Format is different from default (webp)
 
-For full WebP and AVIF encoding support, external tools would need to be integrated.
+If only the default format (webp) is requested without other transformations, no processing occurs and the original image is served.
+
+##### Examples
+- Basic resize: `x-oss-process=image/resize,w_320,h_240`
+- Format conversion: `x-oss-process=image/format,jpg`  
+- Quality adjustment: `x-oss-process=image/quality,q_90`
+- Combined operations: `x-oss-process=image/resize,w_400,h_300/format,png/quality,q_75`
 
 #### Demos
 You can test the following endpoints with any encoded ID:
@@ -135,7 +158,7 @@ You can test the following endpoints with any encoded ID:
 
 The proxy supports 12-character encoded IDs that are securely transformed from 11-character source IDs using XOR encryption. To use this feature:
 
-1. Set the `YTPROXY_SECRET_KEY` environment variable with your secret key
+1. Set the `SECRET_KEY` environment variable with your 16-character secret key
 2. Use 12-character encoded IDs in place of the standard source IDs
 3. The proxy will automatically decode the ID and fetch the appropriate image
 
@@ -150,24 +173,26 @@ The proxy can be configured using command line flags or environment variables:
 
 | Flag | Environment Variable | Default | Description |
 |------|---------------------|---------|-------------|
-| `-p` | `YTPROXY_PORT` | `8080` | Port to listen on |
-| `-l` | `YTPROXY_HOST` | `0.0.0.0` | Host to listen on |
-| `-http` | `YTPROXY_ENABLE_HTTP` | `true` | Enable HTTP server |
-| `-uds` | `YTPROXY_ENABLE_UDS` | `false` | Enable Unix Domain Socket |
-| `-s` | `YTPROXY_UDS_PATH` | `/tmp/http-ytproxy.sock` | Unix socket path |
-| `-http-client-ver` | `YTPROXY_HTTP_CLIENT_VER` | `1` | HTTP client version (1, 2, or 3) |
-| `-ipv6-only` | `YTPROXY_IPV6_ONLY` | `false` | Use IPv6 only |
-| `-pr` | `YTPROXY_PROXY` | `` | Proxy server to use |
-| | `YTPROXY_SECRET_KEY` | `` | Secret key for ID encoding/decoding |
+| `-p` | `PORT` | `8080` | Port to listen on |
+| `-l` | `HOST` | `0.0.0.0` | Host to listen on |
+| `-http` | `ENABLE_HTTP` | `true` | Enable HTTP server |
+| `-uds` | `ENABLE_UDS` | `false` | Enable Unix Domain Socket |
+| `-s` | `UDS_PATH` | `/tmp/http-ytproxy.sock` | Unix socket path |
+| `-http-client-ver` | `HTTP_CLIENT_VER` | `1` | HTTP client version (1, 2, or 3) |
+| `-ipv6-only` | `IPV6_ONLY` | `false` | Use IPv6 only |
+| `-pr` | `PROXY` | `` | Proxy server to use |
+| | `SECRET_KEY` | `` | Secret key for ID encoding/decoding (exactly 16 characters) |
+| | `ENABLE_LITESPEED_CACHE` | `false` | Enable X-LiteSpeed-Cache-Control header (set to `true` to enable) |
 
 ## Configuration
 
 The proxy supports configuration via environment variables or a `.env` file. Create a `.env` file in the project root with the following format:
 
 ```
-YTPROXY_SECRET_KEY=your-secret-key-here
-YTPROXY_PORT=8080
-YTPROXY_HOST=0.0.0.0
+SECRET_KEY=your-16-char-secret-key  # Must be exactly 16 characters
+PORT=8080
+HOST=0.0.0.0
+ENABLE_LITESPEED_CACHE=true  # Set to true to enable X-LiteSpeed-Cache header
 # Add other configuration variables as needed
 ```
 
@@ -219,8 +244,8 @@ services:
     ports:
       - "8080:8080/tcp" # HTTP
     environment:
-      - YTPROXY_SECRET_KEY=your-16-char-key
-      - YTPROXY_PORT=8080
+      - SECRET_KEY=your-16-char-key  # Must be exactly 16 characters
+      - PORT=8080
     cap_add:
       - NET_ADMIN
 
@@ -239,7 +264,7 @@ docker build -t ghcr.io/javadalmasi/thumbs:latest .
 docker run -d \
   --name Thumbs \
   -p 8080:8080 \
-  -e YTPROXY_SECRET_KEY=your-16-char-key \
+  -e SECRET_KEY=your-16-char-key  # Must be exactly 16 characters \
   --cap-add=NET_ADMIN \
   ghcr.io/javadalmasi/thumbs:latest
 ```
