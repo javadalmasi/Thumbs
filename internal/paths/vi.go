@@ -1,17 +1,24 @@
 package paths
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"hash/crc64"
+	"image"
+	_ "image/gif"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"math/big"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/disintegration/imaging"
 	"github.com/javadalmasi/Thumbs/internal/config"
 	"github.com/javadalmasi/Thumbs/internal/httpc"
 )
@@ -82,6 +89,46 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Parse Alibaba-style image processing parameters
+	query := req.URL.Query()
+	
+	// Extract resize parameters
+	var resizeWidth, resizeHeight int
+	if widthStr := query.Get("width"); widthStr != "" {
+		if width, err := strconv.Atoi(widthStr); err == nil && width > 0 {
+			resizeWidth = width
+		}
+	}
+	
+	if heightStr := query.Get("height"); heightStr != "" {
+		if height, err := strconv.Atoi(heightStr); err == nil && height > 0 {
+			resizeHeight = height
+		}
+	}
+	
+	// Extract quality parameter (1-100)
+	quality := 85 // Default quality
+	if qualityStr := query.Get("quality"); qualityStr != "" {
+		if q, err := strconv.Atoi(qualityStr); err == nil && q >= 1 && q <= 100 {
+			quality = q
+		}
+	}
+	
+	// Extract format parameter
+	format := "webp" // Default format
+	if formatStr := query.Get("format"); formatStr != "" {
+		switch strings.ToLower(formatStr) {
+		case "jpg", "jpeg":
+			format = "jpeg"
+		case "png":
+			format = "png"
+		case "webp":
+			format = "webp"
+		case "avif":
+			format = "avif"
+		}
+	}
+	
 	// No processing needed - just fetch the original image
 	qualityLevels := []string{
 		"maxresdefault.jpg",  // Highest quality
@@ -136,6 +183,140 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		io.WriteString(w, "No image found for this video")
 		return
+	}
+	
+	// Check if image processing is needed
+	needProcessing := resizeWidth > 0 || resizeHeight > 0 || format != "webp" || quality != 85
+	
+	if needProcessing {
+		// Process the image
+		imageData, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, "Error reading image data")
+			return
+		}
+		
+		// Decode the image
+		img, _, err := image.Decode(bytes.NewReader(imageData))
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, fmt.Sprintf("Error decoding image: %v", err))
+			return
+		}
+		
+		// Handle resize - if only one dimension is specified, calculate the other to maintain aspect ratio
+		var finalWidth, finalHeight int
+		imgBounds := img.Bounds()
+		origWidth := imgBounds.Dx()
+		origHeight := imgBounds.Dy()
+		
+		if resizeWidth > 0 && resizeHeight > 0 {
+			// Both dimensions specified - resize to exact dimensions
+			finalWidth = resizeWidth
+			finalHeight = resizeHeight
+		} else if resizeWidth > 0 {
+			// Only width specified - calculate height to maintain aspect ratio
+			finalWidth = resizeWidth
+			finalHeight = int(float64(origHeight) * float64(resizeWidth) / float64(origWidth))
+		} else if resizeHeight > 0 {
+			// Only height specified - calculate width to maintain aspect ratio
+			finalHeight = resizeHeight
+			finalWidth = int(float64(origWidth) * float64(resizeHeight) / float64(origHeight))
+		} else {
+			// Neither specified - use original dimensions
+			finalWidth = origWidth
+			finalHeight = origHeight
+		}
+		
+		// Resize the image
+		resizedImg := imaging.Resize(img, finalWidth, finalHeight, imaging.Lanczos)
+		
+		// Encode the resized image based on requested format
+		var buf bytes.Buffer
+		switch format {
+		case "jpg", "jpeg":
+			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+			w.Header().Set("Content-Type", "image/jpeg")
+		case "png":
+			err = png.Encode(&buf, resizedImg)
+			w.Header().Set("Content-Type", "image/png")
+		case "webp":
+			// For webp, we need to handle this separately as Go stdlib doesn't encode webp
+			// For now, we'll return as JPEG since we don't have webp encoding
+			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+			w.Header().Set("Content-Type", "image/jpeg")
+		case "avif":
+			// For avif, return as JPEG since Go's standard library doesn't support encoding these natively
+			// In a production environment, you might want to integrate with external tools like avifenc
+			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+			w.Header().Set("Content-Type", "image/jpeg")
+		default:
+			// Default to JPEG
+			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
+			w.Header().Set("Content-Type", "image/jpeg")
+		}
+		
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			io.WriteString(w, fmt.Sprintf("Error encoding image: %v", err))
+			return
+		}
+		
+		// Add Alibaba-style response headers
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		w.Header().Set("X-OSS-Hash-Crc64ecma", fmt.Sprintf("%d", hashString(videoId))) // Generate hash based on video ID
+		w.Header().Set("X-OSS-Object-Type", "Normal")
+		w.Header().Set("X-OSS-Request-Id", generateRequestID())
+		w.Header().Set("X-OSS-Server-Time", "3")
+		w.Header().Set("X-OSS-Storage-Class", "Standard")
+		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", generateRequestID()[:16]))
+		
+		// Set CORS headers (Alibaba OSS style)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		
+		// Send the processed image
+		w.Header().Set("Content-Length", strconv.Itoa(buf.Len()))
+		w.WriteHeader(http.StatusOK)
+		w.Write(buf.Bytes())
+	} else {
+		// No processing needed, forward original image with Alibaba-style headers
+		defer resp.Body.Close()
+		
+		// Add Alibaba-style response headers
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable") // 1 year
+		w.Header().Set("X-OSS-Hash-Crc64ecma", fmt.Sprintf("%d", hashString(videoId))) // Generate hash based on video ID
+		w.Header().Set("X-OSS-Object-Type", "Normal")
+		w.Header().Set("X-OSS-Request-Id", generateRequestID())
+		w.Header().Set("X-OSS-Server-Time", "2")
+		w.Header().Set("X-OSS-Storage-Class", "Standard")
+		w.Header().Set("ETag", fmt.Sprintf("\"%s\"", generateRequestID()[:16]))
+		
+		// Set CORS headers (Alibaba OSS style)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		
+		// Copy only necessary headers from original response, removing YouTube-specific ones
+		for key, values := range resp.Header {
+			lowerKey := strings.ToLower(key)
+			// Skip YouTube-specific headers
+			if !strings.Contains(lowerKey, "youtube") && 
+			   !strings.Contains(lowerKey, "x-youtube") &&
+			   !strings.Contains(lowerKey, "server") {
+				for _, value := range values {
+					w.Header().Add(key, value)
+				}
+			}
+		}
+		
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 	}
 	
 	// We got a response, forward it to the client

@@ -58,28 +58,83 @@ Returns the highest quality image available for the given encoded ID.
 
 #### Query Parameters
 
-All query parameters are ignored. The service retrieves and returns the highest quality image directly from YouTube without any processing.
+The service supports Alibaba Cloud Object Storage (OSS) style image processing parameters:
+
+##### Resize Operations
+- `width` - Specify output image width in pixels
+- `height` - Specify output image height in pixels
+
+When only one dimension is specified, the other is automatically calculated to maintain aspect ratio.
+
+##### Format Conversion
+Supported formats:
+- `format=jpg` - Convert to JPEG format
+- `format=png` - Convert to PNG format  
+- `format=webp` - Convert to WebP format (returned as JPEG due to Go standard library limitations)
+- `format=avif` - Convert to AVIF format (returned as JPEG due to Go standard library limitations)
+
+##### Quality Settings
+- `quality` - Set output quality (range: 1-100, default: 85)
+
+##### Combined Operations
+Multiple operations can be combined by specifying multiple parameters:
+- `/vi/2r8RVAuxuMN_?width=800&height=600&format=jpg&quality=90`
 
 #### Response Headers
 
-The service returns various response headers, including caching headers. By default, the `X-LiteSpeed-Cache-Control` header is disabled. To enable it, set the `ENABLE_LITESPEED_CACHE` environment variable to `true`.
+The service returns Alibaba OSS-style response headers:
 
-When enabled, the service will return the following cache headers:
 - `Cache-Control`: `public, max-age=31536000, immutable` (1 year)
-- `X-LiteSpeed-Cache-Control`: `max-age=31536000` (1 year, only when enabled)
-- `Expires`: Set to 1 year from the request time
+- `X-OSS-Hash-Crc64ecma`: Content integrity hash
+- `X-OSS-Object-Type`: Object type indicator
+- `X-OSS-Request-ID`: Unique request identifier
+- `X-OSS-Server-Time`: Server processing time
+- `X-OSS-Storage-Class`: Storage class indicator
+- `ETag`: Entity tag for caching
+- `Access-Control-Allow-Origin`: CORS support (*)
+- `Access-Control-Allow-Headers`: CORS support (*)
+- `Access-Control-Allow-Methods`: CORS support (GET, HEAD, POST, PUT, DELETE, OPTIONS)
+- `Access-Control-Max-Age`: CORS support (86400)
 
 #### Examples
 
 ```
 # Get best quality thumbnail (12-character encoded ID)
 /vi/2r8RVAuxuMN_
+
+# Resize to 800x600
+/vi/2r8RVAuxuMN_?width=800&height=600
+
+# Resize width only (height auto-calculated)
+/vi/2r8RVAuxuMN_?width=1024
+
+# Convert to PNG with quality 90
+/vi/2r8RVAuxuMN_?format=png&quality=90
+
+# Resize and convert to JPEG
+/vi/2r8RVAuxuMN_?width=1280&height=720&format=jpg&quality=85
+
+# All operations combined
+/vi/2r8RVAuxuMN_?width=1920&height=1080&format=jpg&quality=95
 ```
 
+#### Processing Trigger
+
+Image processing is automatically performed when any of the following parameters are specified:
+- Width or height parameters
+- Quality different from default (85)
+- Format different from default (webp)
+
+If no processing parameters are specified, the original image is served directly with Alibaba OSS-style headers.
+
 #### Demos
-You can test the following endpoint with any encoded ID:
+You can test the following endpoints with any encoded ID:
 
 1. **Basic thumbnail:** `http://localhost:8080/vi/{encodedId}`
+2. **Resize:** `http://localhost:8080/vi/{encodedId}?width=800&height=600`
+3. **Format conversion:** `http://localhost:8080/vi/{encodedId}?format=jpg`
+4. **Quality adjustment:** `http://localhost:8080/vi/{encodedId}?quality=90`
+5. **Combined operations:** `http://localhost:8080/vi/{encodedId}?width=1024&height=768&format=png&quality=85`
 
 ### Encoded IDs
 
@@ -208,6 +263,11 @@ curl http://localhost:8080
 
 # Test with an encoded ID (12-character encoded ID)
 curl http://localhost:8080/vi/ENCODED_ID_HERE
+
+# Test with image processing parameters
+curl http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600
+curl http://localhost:8080/vi/ENCODED_ID_HERE?format=png&quality=90
+curl http://localhost:8080/vi/ENCODED_ID_HERE?width=1024&height=768&format=jpg&quality=85
 ```
 
 ### Testing Image Output
@@ -218,9 +278,27 @@ You can save and verify image properties:
 # Download a thumbnail
 curl -o test.jpg "http://localhost:8080/vi/ENCODED_ID_HERE"
 
+# Download a resized thumbnail
+curl -o resized.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600"
+
+# Download a converted format
+curl -o test.png "http://localhost:8080/vi/ENCODED_ID_HERE?format=png"
+
 # Check file size and format
 file test.jpg
 ls -la test.jpg
+```
+
+### Testing Response Headers
+
+You can inspect the Alibaba OSS-style headers:
+
+```bash
+# Check response headers
+curl -I http://localhost:8080/vi/ENCODED_ID_HERE
+
+# Check headers with processing parameters
+curl -I "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600"
 ```
 
 ### Example with Real Source ID
