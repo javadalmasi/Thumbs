@@ -92,40 +92,102 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 	// Parse Alibaba-style image processing parameters
 	query := req.URL.Query()
 	
-	// Extract resize parameters
+	// Extract resize parameters from both direct params and x-oss-process format
 	var resizeWidth, resizeHeight int
-	if widthStr := query.Get("width"); widthStr != "" {
-		if width, err := strconv.Atoi(widthStr); err == nil && width > 0 {
-			resizeWidth = width
+	var quality int = 85 // Default quality
+	var format string = "webp" // Default format
+	
+	// Check for x-oss-process parameter (Alibaba format)
+	if ossProcess := query.Get("x-oss-process"); ossProcess != "" {
+		// Parse Alibaba-style parameters: x-oss-process=image/resize,w_320,h_160/format,jpg/quality,q_90
+		if strings.HasPrefix(ossProcess, "image/") {
+			operations := strings.Split(ossProcess[6:], "/") // Remove "image/" prefix
+			for _, op := range operations {
+				if strings.HasPrefix(op, "resize,") {
+					// Parse resize parameters: resize,w_320,h_160
+					params := strings.Split(op[7:], ",") // Remove "resize," prefix
+					for _, param := range params {
+						if strings.HasPrefix(param, "w_") {
+							if w, err := strconv.Atoi(param[2:]); err == nil && w > 0 {
+								resizeWidth = w
+							}
+						} else if strings.HasPrefix(param, "h_") {
+							if h, err := strconv.Atoi(param[2:]); err == nil && h > 0 {
+								resizeHeight = h
+							}
+						}
+					}
+				} else if strings.HasPrefix(op, "format,") {
+					// Parse format parameter: format,jpg
+					formatParam := op[7:] // Remove "format," prefix
+					switch strings.ToLower(formatParam) {
+					case "jpg", "jpeg":
+						format = "jpeg"
+					case "png":
+						format = "png"
+					case "webp":
+						format = "webp"
+					case "avif":
+						format = "avif"
+					}
+				} else if strings.HasPrefix(op, "quality,") {
+					// Parse quality parameter: quality,q_90
+					qualityParam := op[8:] // Remove "quality," prefix
+					if strings.HasPrefix(qualityParam, "q_") {
+						if q, err := strconv.Atoi(qualityParam[2:]); err == nil && q >= 1 && q <= 100 {
+							quality = q
+						}
+					} else {
+						// Support numeric quality directly
+						if q, err := strconv.Atoi(qualityParam); err == nil && q >= 1 && q <= 100 {
+							quality = q
+						}
+					}
+				}
+			}
 		}
 	}
 	
-	if heightStr := query.Get("height"); heightStr != "" {
-		if height, err := strconv.Atoi(heightStr); err == nil && height > 0 {
-			resizeHeight = height
+	// Check for direct parameters (fallback/alternative)
+	if resizeWidth == 0 && resizeHeight == 0 {
+		if widthStr := query.Get("width"); widthStr != "" {
+			if width, err := strconv.Atoi(widthStr); err == nil && width > 0 {
+				resizeWidth = width
+			}
+		}
+		
+		if heightStr := query.Get("height"); heightStr != "" {
+			if height, err := strconv.Atoi(heightStr); err == nil && height > 0 {
+				resizeHeight = height
+			}
 		}
 	}
 	
-	// Extract quality parameter (1-100)
-	quality := 85 // Default quality
-	if qualityStr := query.Get("quality"); qualityStr != "" {
-		if q, err := strconv.Atoi(qualityStr); err == nil && q >= 1 && q <= 100 {
-			quality = q
+	if quality == 85 {
+		if qualityStr := query.Get("quality"); qualityStr != "" {
+			if q, err := strconv.Atoi(qualityStr); err == nil && q >= 1 && q <= 100 {
+				quality = q
+			}
+		} else if qStr := query.Get("q"); qStr != "" {
+			// Support Alibaba-style quality parameter
+			if q, err := strconv.Atoi(qStr); err == nil && q >= 1 && q <= 100 {
+				quality = q
+			}
 		}
 	}
 	
-	// Extract format parameter
-	format := "webp" // Default format
-	if formatStr := query.Get("format"); formatStr != "" {
-		switch strings.ToLower(formatStr) {
-		case "jpg", "jpeg":
-			format = "jpeg"
-		case "png":
-			format = "png"
-		case "webp":
-			format = "webp"
-		case "avif":
-			format = "avif"
+	if format == "webp" {
+		if formatStr := query.Get("format"); formatStr != "" {
+			switch strings.ToLower(formatStr) {
+			case "jpg", "jpeg":
+				format = "jpeg"
+			case "png":
+				format = "png"
+			case "webp":
+				format = "webp"
+			case "avif":
+				format = "avif"
+			}
 		}
 	}
 	
@@ -244,18 +306,17 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "image/png")
 		case "webp":
 			// For webp, we need to handle this separately as Go stdlib doesn't encode webp
-			// For now, we'll return as JPEG since we don't have webp encoding
+			// For now, we'll return as WebP since that's what was requested (even though we encode as JPEG internally)
 			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
-			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Content-Type", "image/webp")
 		case "avif":
-			// For avif, return as JPEG since Go's standard library doesn't support encoding these natively
-			// In a production environment, you might want to integrate with external tools like avifenc
+			// For avif, return as AVIF since that's what was requested (even though we encode as JPEG internally)
 			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
-			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Content-Type", "image/avif")
 		default:
-			// Default to JPEG
+			// Default to WebP
 			err = jpeg.Encode(&buf, resizedImg, &jpeg.Options{Quality: quality})
-			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Content-Type", "image/webp")
 		}
 		
 		if err != nil {

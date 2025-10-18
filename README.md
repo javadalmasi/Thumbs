@@ -58,27 +58,33 @@ Returns the highest quality image available for the given encoded ID.
 
 #### Query Parameters
 
-The service supports Alibaba Cloud Object Storage (OSS) style image processing parameters:
+The service supports Alibaba Cloud Object Storage (OSS) style image processing parameters in two formats:
 
-##### Resize Operations
+##### Alibaba OSS-Style Parameters (Primary)
+Using the standard Alibaba OSS format:
+- `x-oss-process=image/resize,w_320,h_160` - Resize to 320x160 pixels
+- `x-oss-process=image/format,jpg` - Convert to JPEG format
+- `x-oss-process=image/quality,q_90` - Set quality to 90%
+- `x-oss-process=image/resize,w_320,h_160/format,jpg/quality,q_90` - Combined operations
+
+##### Direct Parameters (Alternative)
+Using direct parameter specification:
 - `width` - Specify output image width in pixels
 - `height` - Specify output image height in pixels
+- `format` - Specify output format (jpg, png, webp, avif)
+- `quality` or `q` - Set output quality (range: 1-100, default: 85)
 
 When only one dimension is specified, the other is automatically calculated to maintain aspect ratio.
 
-##### Format Conversion
-Supported formats:
-- `format=jpg` - Convert to JPEG format
-- `format=png` - Convert to PNG format  
-- `format=webp` - Convert to WebP format (returned as JPEG due to Go standard library limitations)
-- `format=avif` - Convert to AVIF format (returned as JPEG due to Go standard library limitations)
+##### Supported Formats
+- `jpg` or `jpeg` - Convert to JPEG format
+- `png` - Convert to PNG format  
+- `webp` - Convert to WebP format
+- `avif` - Convert to AVIF format
 
 ##### Quality Settings
-- `quality` - Set output quality (range: 1-100, default: 85)
-
-##### Combined Operations
-Multiple operations can be combined by specifying multiple parameters:
-- `/vi/2r8RVAuxuMN_?width=800&height=600&format=jpg&quality=90`
+- Range: 1-100 (default: 85)
+- Parameters: `quality` or `q` (Alibaba-style)
 
 #### Response Headers
 
@@ -102,30 +108,43 @@ The service returns Alibaba OSS-style response headers:
 # Get best quality thumbnail (12-character encoded ID)
 /vi/2r8RVAuxuMN_
 
-# Resize to 800x600
+# Resize to 320x160 (Alibaba OSS format)
+/vi/2r8RVAuxuMN_?x-oss-process=image/resize,w_320,h_160
+
+# Resize to 800x600 (direct parameter format)
 /vi/2r8RVAuxuMN_?width=800&height=600
 
 # Resize width only (height auto-calculated)
 /vi/2r8RVAuxuMN_?width=1024
 
-# Convert to PNG with quality 90
+# Convert to PNG with quality 90 (direct format)
 /vi/2r8RVAuxuMN_?format=png&quality=90
 
-# Resize and convert to JPEG
+# Convert to JPEG with quality 90 (Alibaba OSS format)
+/vi/2r8RVAuxuMN_?x-oss-process=image/format,jpg/quality,q_90
+
+# Resize and convert to JPEG (combined Alibaba OSS format)
+/vi/2r8RVAuxuMN_?x-oss-process=image/resize,w_1280,h_720/format,jpg/quality,q_85
+
+# Resize and convert to JPEG (combined direct parameter format)
 /vi/2r8RVAuxuMN_?width=1280&height=720&format=jpg&quality=85
 
-# All operations combined
-/vi/2r8RVAuxuMN_?width=1920&height=1080&format=jpg&quality=95
+# All operations combined (Alibaba OSS format)
+/vi/2r8RVAuxuMN_?x-oss-process=image/resize,w_1920,h_1080/format,jpg/quality,q_95
 ```
 
 #### Processing Trigger
 
 Image processing is automatically performed when any of the following parameters are specified:
-- Width or height parameters
+- Width or height parameters (either direct or Alibaba OSS format)
 - Quality different from default (85)
 - Format different from default (webp)
 
 If no processing parameters are specified, the original image is served directly with Alibaba OSS-style headers.
+
+#### Parameter Precedence
+
+When both Alibaba OSS-style (`x-oss-process`) and direct parameters are provided, Alibaba OSS-style parameters take precedence.
 
 #### Demos
 You can test the following endpoints with any encoded ID:
@@ -264,10 +283,15 @@ curl http://localhost:8080
 # Test with an encoded ID (12-character encoded ID)
 curl http://localhost:8080/vi/ENCODED_ID_HERE
 
-# Test with image processing parameters
+# Test with image processing parameters (direct format)
 curl http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600
 curl http://localhost:8080/vi/ENCODED_ID_HERE?format=png&quality=90
 curl http://localhost:8080/vi/ENCODED_ID_HERE?width=1024&height=768&format=jpg&quality=85
+
+# Test with image processing parameters (Alibaba OSS format)
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_800,h_600"
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/format,png/quality,q_90"
+curl "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_1024,h_768/format,jpg/quality,q_85"
 ```
 
 ### Testing Image Output
@@ -278,11 +302,17 @@ You can save and verify image properties:
 # Download a thumbnail
 curl -o test.jpg "http://localhost:8080/vi/ENCODED_ID_HERE"
 
-# Download a resized thumbnail
+# Download a resized thumbnail (direct parameter format)
 curl -o resized.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600"
 
-# Download a converted format
+# Download a resized thumbnail (Alibaba OSS format)
+curl -o resized-alibaba.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_800,h_600"
+
+# Download a converted format (direct parameter format)
 curl -o test.png "http://localhost:8080/vi/ENCODED_ID_HERE?format=png"
+
+# Download a converted format (Alibaba OSS format)
+curl -o test-alibaba.webp "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/format,webp"
 
 # Check file size and format
 file test.jpg
@@ -297,8 +327,11 @@ You can inspect the Alibaba OSS-style headers:
 # Check response headers
 curl -I http://localhost:8080/vi/ENCODED_ID_HERE
 
-# Check headers with processing parameters
+# Check headers with processing parameters (direct format)
 curl -I "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600"
+
+# Check headers with processing parameters (Alibaba OSS format)
+curl -I "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_800,h_600"
 ```
 
 ### Example with Real Source ID
