@@ -79,7 +79,7 @@ Expires: [future date, 1 year from request]
 
 ## Feature Details
 
-- The header is only added when image transformations are applied (resize, quality, or format parameters)
+- The header is only added when image transformations are applied (though currently no transformations are processed)
 - The cache duration is set to 1 year (31536000 seconds) 
 - The header helps LiteSpeed web servers cache processed images more efficiently
 - When disabled (default), no additional LiteSpeed-specific header is added

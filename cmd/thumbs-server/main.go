@@ -108,7 +108,6 @@ func beforeProxy(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
 		w.Header().Set("Access-Control-Max-Age", "1728000")
 		w.Header().Set("Strict-Transport-Security", "max-age=86400")
-		w.Header().Set("X-Powered-By", "Thumbs "+version)
 
 		if req.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -139,6 +138,10 @@ func main() {
 	flag.StringVar(&config.Cfg.Port, "p", config.Cfg.Port, "Specify a port number")
 	flag.StringVar(&config.Cfg.Host, "l", config.Cfg.Host, "Specify a listen address")
 	flag.Parse()
+
+	// Set the version for the paths package
+	paths.Version = version
+
 
 	log.Printf("[INFO] Current config values: %+v\n", config.Cfg)
 

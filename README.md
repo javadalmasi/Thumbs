@@ -1,12 +1,11 @@
 # Thumbs - Image Proxy Server
 
-A high-performance, lightweight proxy server specifically designed for serving web images with enhanced functionality including quality detection, resizing, quality adjustment, format conversion, and encrypted ID support.
+A high-performance, lightweight proxy server specifically designed for serving web images with enhanced functionality including quality detection, encrypted ID support, and concurrent requests.
 
 ## Features
 
 - **Fast Performance**: Uses HTTP/1.1, HTTP/2, and HTTP/3 clients for optimal performance
 - **Quality Detection**: Automatically detects and serves the highest available quality image from any source
-- **Image Parameters**: Supports resize, quality, and format conversion parameters
 - **Encrypted IDs**: Supports encoded 12-character IDs that are securely decoded to 11-character source IDs
 - **Concurrent Requests**: Finds the best quality image efficiently using concurrent requests
 - **Multiple Protocols**: Supports HTTP/1.1, HTTP/2, and HTTP/3 for maximum compatibility
@@ -59,12 +58,7 @@ Returns the highest quality image available for the given encoded ID.
 
 #### Query Parameters
 
-| Parameter | Type | Description | Default |
-|-----------|------|-------------|---------|
-| `x-oss-process` | string | Alibaba-style image processing (e.g., `image/resize,m_fill,w_800,h_600`) | None |
-| `resize` | string | Resize image to specified dimensions (width,height) | None |
-| `quality` | integer | Image quality (1-100) | 85 |
-| `format` | string | Output format (jpg, webp, avif) | webp |
+All query parameters are ignored. The service retrieves and returns the highest quality image directly from YouTube without any processing.
 
 #### Response Headers
 
@@ -80,79 +74,12 @@ When enabled, the service will return the following cache headers:
 ```
 # Get best quality thumbnail (12-character encoded ID)
 /vi/2r8RVAuxuMN_
-
-# Resize to 768x432 with 85% quality in webp format
-/vi/2r8RVAuxuMN_?resize=768,432&quality=85
-
-# Resize to 1280x720 with 90% quality in avif format
-/vi/2r8RVAuxuMN_?resize=1280,720&quality=90&format=avif
-
-# Get in jpg format with default quality
-/vi/2r8RVAuxuMN_?format=jpg
-
-# Alibaba-style resize (scale to 800x600)
-/vi/2r8RVAuxuMN_?x-oss-process=image/resize,m_fill,w_800,h_600
-
-# Full example with quality, format, and resize
-/vi/2r8RVAuxuMN_?x-oss-process=image/resize,m_fill,w_1024,h_768&quality=90&format=webp
 ```
 
-#### Alibaba-Style Image Processing
-
-The proxy supports Alibaba Cloud Object Storage Service (OSS) style image processing parameters through the `x-oss-process` query parameter. All operations use the format: `x-oss-process=image/{operation},{parameters}`
-
-**Default Values:**
-- Format: `webp` (default output format)
-- Quality: `85` (default quality level)
-
-##### Resize Operations
-- `x-oss-process=image/resize,w_800,h_600` - Resize to 800x600 while maintaining aspect ratio
-- `x-oss-process=image/resize,w_800` - Resize width to 800, height auto-scaled maintaining aspect ratio
-- `x-oss-process=image/resize,h_600` - Resize height to 600, width auto-scaled maintaining aspect ratio
-
-**Important:** Currently only width and height parameters are supported. Mode parameters (m_fill, m_lfit, etc.) are not implemented.
-
-##### Format Conversion
-Supported formats:
-- `x-oss-process=image/format,jpg` - Convert to JPEG format
-- `x-oss-process=image/format,png` - Convert to PNG format  
-- `x-oss-process=image/format,webp` - Convert to WebP format (converted to JPEG in this implementation due to Go standard library limitations)
-- `x-oss-process=image/format,avif` - Convert to AVIF format (converted to JPEG in this implementation due to Go standard library limitations)
-
-##### Quality Settings
-- `x-oss-process=image/quality,q_90` - Set output quality to 90% (range: 1-100)
-- `x-oss-process=image/quality,q_75` - Set output quality to 75% (range: 1-100)
-
-##### Combined Operations
-Multiple operations can be combined by separating them with `/`:
-- `x-oss-process=image/resize,w_800,h_600/format,jpg` - Resize to 800x600 and convert to JPEG
-- `x-oss-process=image/format,png/quality,q_90` - Convert to PNG with 90% quality
-- `x-oss-process=image/resize,w_1024,h_768/format,webp/quality,q_85` - Resize to 1024x768, convert to WebP, set quality to 85%
-
-**Note:** When requesting formats that Go's standard library cannot encode (WebP, AVIF), the image will be converted to JPEG but with appropriate Content-Type headers.
-
-##### Processing Trigger
-Image processing is triggered when any of the following conditions are met:
-- Resize parameters are specified (both width and height > 0)
-- Quality is different from default (85)
-- Format is different from default (webp)
-
-If only the default format (webp) is requested without other transformations, no processing occurs and the original image is served.
-
-##### Examples
-- Basic resize: `x-oss-process=image/resize,w_320,h_240`
-- Format conversion: `x-oss-process=image/format,jpg`  
-- Quality adjustment: `x-oss-process=image/quality,q_90`
-- Combined operations: `x-oss-process=image/resize,w_400,h_300/format,png/quality,q_75`
-
 #### Demos
-You can test the following endpoints with any encoded ID:
+You can test the following endpoint with any encoded ID:
 
 1. **Basic thumbnail:** `http://localhost:8080/vi/{encodedId}`
-2. **Alibaba-style resize:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/resize,w_800,h_600`
-3. **Quality adjustment:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/quality,q_90`
-4. **Format conversion:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/format,jpg`
-5. **Combined operations:** `http://localhost:8080/vi/{encodedId}?x-oss-process=image/resize,w_1024,h_768/format,jpg/quality,q_85`
 
 ### Encoded IDs
 
@@ -281,15 +208,6 @@ curl http://localhost:8080
 
 # Test with an encoded ID (12-character encoded ID)
 curl http://localhost:8080/vi/ENCODED_ID_HERE
-
-# Test with resize parameters
-curl "http://localhost:8080/vi/ENCODED_ID_HERE?resize=320,240"
-
-# Test with Alibaba-style resize
-curl "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_320,h_240"
-
-# Test with format and quality
-curl "http://localhost:8080/vi/ENCODED_ID_HERE?format=jpg&quality=90"
 ```
 
 ### Testing Image Output
@@ -298,7 +216,7 @@ You can save and verify image properties:
 
 ```bash
 # Download a thumbnail
-curl -o test.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?resize=320,240"
+curl -o test.jpg "http://localhost:8080/vi/ENCODED_ID_HERE"
 
 # Check file size and format
 file test.jpg
