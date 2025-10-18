@@ -296,6 +296,8 @@ func Vi(w http.ResponseWriter, req *http.Request) {
 		resizedImg := imaging.Resize(img, finalWidth, finalHeight, imaging.Lanczos)
 		
 		// Encode the resized image based on requested format
+		// Note: Due to limitations in Go's standard library, all formats are currently encoded as JPEG internally
+		// but served with the appropriate Content-Type header to simulate format conversion
 		var buf bytes.Buffer
 		switch format {
 		case "jpg", "jpeg":

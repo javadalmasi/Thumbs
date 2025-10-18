@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/disintegration/imaging v1.6.2
 	github.com/joho/godotenv v1.5.1
+	github.com/kolesa-team/go-webp v1.0.5
 	github.com/prometheus/procfs v0.15.1
 	github.com/quic-go/quic-go v0.48.1
 )

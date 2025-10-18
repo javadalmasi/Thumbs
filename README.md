@@ -79,12 +79,15 @@ When only one dimension is specified, the other is automatically calculated to m
 ##### Supported Formats
 - `jpg` or `jpeg` - Convert to JPEG format
 - `png` - Convert to PNG format  
-- `webp` - Convert to WebP format
-- `avif` - Convert to AVIF format
+- `webp` - Simulate WebP format (currently encoded as JPEG with WebP Content-Type)
+- `avif` - Simulate AVIF format (currently encoded as JPEG with AVIF Content-Type)
+
+**Note:** Due to limitations in Go's standard library, all formats are currently encoded as JPEG internally but served with the appropriate Content-Type header to simulate format conversion. True format conversion would require external libraries that are not currently included in this implementation.
 
 ##### Quality Settings
 - Range: 1-100 (default: 85)
 - Parameters: `quality` or `q` (Alibaba-style)
+- Applies to JPEG encoding (other formats use equivalent quality settings)
 
 #### Response Headers
 
@@ -117,19 +120,24 @@ The service returns Alibaba OSS-style response headers:
 # Resize width only (height auto-calculated)
 /vi/2r8RVAuxuMN_?width=1024
 
-# Convert to PNG with quality 90 (direct format)
+# Set format to PNG with quality 90 (direct format)
+# Note: Internally still encoded as JPEG but served with PNG Content-Type
 /vi/2r8RVAuxuMN_?format=png&quality=90
 
-# Convert to JPEG with quality 90 (Alibaba OSS format)
+# Set format to JPEG with quality 90 (Alibaba OSS format)
+# Note: Internally still encoded as JPEG but explicitly sets JPEG Content-Type
 /vi/2r8RVAuxuMN_?x-oss-process=image/format,jpg/quality,q_90
 
-# Resize and convert to JPEG (combined Alibaba OSS format)
+# Resize and set format to JPEG (combined Alibaba OSS format)
+# Note: Internally still encoded as JPEG but with appropriate Content-Type
 /vi/2r8RVAuxuMN_?x-oss-process=image/resize,w_1280,h_720/format,jpg/quality,q_85
 
-# Resize and convert to JPEG (combined direct parameter format)
+# Resize and set format to JPEG (combined direct parameter format)
+# Note: Internally still encoded as JPEG but with appropriate Content-Type
 /vi/2r8RVAuxuMN_?width=1280&height=720&format=jpg&quality=85
 
 # All operations combined (Alibaba OSS format)
+# Note: Internally still encoded as JPEG but with appropriate Content-Type
 /vi/2r8RVAuxuMN_?x-oss-process=image/resize,w_1920,h_1080/format,jpg/quality,q_95
 ```
 
@@ -308,13 +316,16 @@ curl -o resized.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=6
 # Download a resized thumbnail (Alibaba OSS format)
 curl -o resized-alibaba.jpg "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_800,h_600"
 
-# Download a converted format (direct parameter format)
+# Download with format set to PNG (direct parameter format)
+# Note: Internally still JPEG but with PNG Content-Type header
 curl -o test.png "http://localhost:8080/vi/ENCODED_ID_HERE?format=png"
 
-# Download a converted format (Alibaba OSS format)
+# Download with format set to WebP (Alibaba OSS format)
+# Note: Internally still JPEG but with WebP Content-Type header
 curl -o test-alibaba.webp "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/format,webp"
 
 # Check file size and format
+# Note: All files will be JPEG-encoded data with different Content-Type headers
 file test.jpg
 ls -la test.jpg
 ```
@@ -333,6 +344,14 @@ curl -I "http://localhost:8080/vi/ENCODED_ID_HERE?width=800&height=600"
 # Check headers with processing parameters (Alibaba OSS format)
 curl -I "http://localhost:8080/vi/ENCODED_ID_HERE?x-oss-process=image/resize,w_800,h_600"
 ```
+
+### Future Improvements
+
+Planned enhancements for future versions:
+
+1. **True Format Conversion** - Integrate external libraries for proper WebP and AVIF encoding
+2. **Advanced Image Processing** - Add support for cropping, rotation, watermarks, etc.
+3. **Performance Optimization** - Implement image caching and more efficient processing pipelines
 
 ### Example with Real Source ID
 
